@@ -64,7 +64,12 @@ class PairingSession {
     return _wait(PoloKind.secretAck);
   }
 
+  /// Whether the TV accepted the secret (pairing finished).
+  bool _paired = false;
+
   Future<void> close() async {
+    // Leaving mid-pairing: tell the TV, so it closes its code screen instead of leaving it up.
+    if (!_paired && !_closed && _deadError == null) channel.send(Polo.abort());
     _closed = true;
     await _sub.cancel();
     await channel.close();
@@ -110,6 +115,7 @@ class PairingSession {
       case PoloKind.options:
         channel.send(Polo.configuration());
       case PoloKind.configurationAck || PoloKind.secretAck:
+        if (msg.kind == PoloKind.secretAck) _paired = true;
         if (_waitingFor == msg.kind) _complete();
       case PoloKind.other:
         break;

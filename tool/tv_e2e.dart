@@ -66,6 +66,17 @@ Future<void> main(List<String> args) async {
     exit(0);
   }
 
+  if (mode == 'pair-cancel') {
+    // Starts pairing (TV shows a code), then cancels after a few seconds.
+    final flow = await PairingFlow.begin(host, identity);
+    stdout.writeln('TV_SHOWS_CODE');
+    await Future<void>.delayed(const Duration(seconds: 4));
+    await flow.close();
+    stdout.writeln('CANCELLED');
+    await Future<void>.delayed(const Duration(seconds: 1));
+    exit(0);
+  }
+
   if (mode == 'share-host') {
     // Phone A: offers its (working) pairing for this TV to other phones.
     final fp = await fetchTvFingerprint(host, identity);

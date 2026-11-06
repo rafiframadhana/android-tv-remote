@@ -1,0 +1,4 @@
+tags:
+  manual:
+    # Talks to a real TV; run with REAL_TV=<ip> flutter test --tags manual
+    skip: "manual test: needs a real TV (REAL_TV=<ip>)"

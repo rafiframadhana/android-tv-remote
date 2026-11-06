@@ -17,13 +17,14 @@ Future<SavedTv?> showPairingSheet(
   required String host,
   required String name,
   bool manualName = false,
+  bool forgotten = false,
 }) {
   return showModalBottomSheet<SavedTv>(
     context: context,
     isScrollControlled: true,
     builder: (ctx) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-      child: _PairingSheet(host: host, name: name, manualName: manualName),
+      child: _PairingSheet(host: host, name: name, manualName: manualName, forgotten: forgotten),
     ),
   );
 }
@@ -31,9 +32,12 @@ Future<SavedTv?> showPairingSheet(
 enum _Stage { connecting, enterCode, verifying, failed }
 
 class _PairingSheet extends StatefulWidget {
-  const _PairingSheet({required this.host, required this.name, required this.manualName});
+  const _PairingSheet({required this.host, required this.name, required this.manualName, this.forgotten = false});
   final String host;
   final String name;
+
+  /// Opened because the TV no longer accepts this phone (re-pairing a saved TV).
+  final bool forgotten;
 
   /// [name] is a placeholder; use the TV's reported name instead.
   final bool manualName;
@@ -214,7 +218,18 @@ class _PairingSheetState extends State<_PairingSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Pair with ${widget.name}', style: theme.textTheme.titleLarge),
+            Text(
+              widget.forgotten ? 'Pair ${widget.name} again' : 'Pair with ${widget.name}',
+              style: theme.textTheme.titleLarge,
+            ),
+            if (widget.forgotten) ...[
+              const SizedBox(height: 6),
+              Text(
+                'The TV no longer recognises this phone. This happens when another phone or remote app '
+                'pairs with it, or the TV is reset.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: 8),
             switch (_stage) {
               _Stage.connecting => const _Row(spinner: true, text: 'Connecting to the TV…'),

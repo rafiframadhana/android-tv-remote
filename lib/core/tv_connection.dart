@@ -117,6 +117,9 @@ class TvConnection extends ChangeNotifier {
     }
   }
 
+  /// Why the last connection attempt ended (diagnostics).
+  Object? lastFailure;
+
   bool _disposed = false;
 
   @override
@@ -178,21 +181,23 @@ class TvConnection extends ChangeNotifier {
       } on Object catch (e) {
         failure = e;
       }
+      lastFailure = failure;
+      if (kDebugMode) debugPrint('TvConnection ${_current.host}: attempt ended: ${failure.runtimeType}: $failure');
       final received = session?.receivedMessage ?? false;
       await _closeSession();
       if (!alive()) return;
 
       switch (classifyConnectFailure(failure, receivedMessage: received)) {
         case ConnectFailure.probablyRejected:
-          // Twice in a row → the TV no longer accepts our certificate. Once may be a
-          // handshake cut short by a reboot or Wi-Fi drop.
+          // Twice since the last good connection → the TV no longer accepts our certificate.
+          // Once may be a handshake cut short by a reboot or Wi-Fi drop. Network failures in
+          // between don't reset the count (on Android rejections can arrive mixed with them).
           if (++rejections >= 2) {
             _halt(TvStatus.needsPairing);
             return;
           }
           _set(TvStatus.connecting);
         case ConnectFailure.unreachable:
-          rejections = 0;
           _set(failure is SocketException || failure is TimeoutException ? TvStatus.unreachable : TvStatus.connecting);
       }
 

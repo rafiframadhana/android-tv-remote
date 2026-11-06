@@ -111,6 +111,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final tried = _tryingHost;
     final status = _connection?.status;
     if (tried == null && status == TvStatus.unreachable) unawaited(_services.discovery.scan());
+    // The TV forgot this phone (another phone paired, TV reset…): ask for the code right away
+    // instead of leaving the user on a dead remote. Once per visit; the banner stays as backup.
+    if (tried == null && status == TvStatus.needsPairing && !_autoPairOffered) {
+      _autoPairOffered = true;
+      scheduleMicrotask(() {
+        if (mounted) _pairAgain(forgotten: true);
+      });
+    }
     if (tried == null || status == null || status == TvStatus.connecting || status == TvStatus.connected) return;
     _rejectedHosts.add(tried);
     _tryingHost = null;
@@ -130,12 +138,23 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _connect(host: found.host);
   }
 
-  Future<void> _pairAgain() async {
-    final tv = await showPairingSheet(context, host: _tv.host, name: _tv.name);
-    if (tv != null && mounted) {
-      _tv = tv;
-      _tryingHost = null;
-      _connect();
+  /// Whether the pairing sheet already opened by itself during this visit.
+  bool _autoPairOffered = false;
+  bool _pairingOpen = false;
+
+  Future<void> _pairAgain({bool forgotten = false}) async {
+    if (_pairingOpen) return;
+    _pairingOpen = true;
+    try {
+      final tv = await showPairingSheet(context, host: _tv.host, name: _tv.name, forgotten: forgotten);
+      if (tv != null && mounted) {
+        _tv = tv;
+        _tryingHost = null;
+        _autoPairOffered = false; // paired again; if it is forgotten again later, ask again
+        _connect();
+      }
+    } finally {
+      _pairingOpen = false;
     }
   }
 

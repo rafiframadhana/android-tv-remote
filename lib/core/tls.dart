@@ -93,8 +93,25 @@ enum ConnectFailure {
 
 ConnectFailure classifyConnectFailure(Object? error, {required bool receivedMessage}) {
   if (isTlsFailure(error)) return ConnectFailure.probablyRejected;
-  if (!receivedMessage && error is ChannelClosedException) return ConnectFailure.probablyRejected;
+  if (receivedMessage) return ConnectFailure.unreachable;
+  final cause = error is ChannelClosedException ? error.cause : error;
+  // On Android the TV's rejection of an unknown client certificate often surfaces as the TV
+  // resetting the connection during or right after the handshake ("Connection reset by peer"),
+  // not as a TLS error (seen on a Panasonic Android TV). A TV that is off or out of reach looks
+  // different: refused, timed out, unreachable.
+  if (cause is SocketException && isConnectionReset(cause)) return ConnectFailure.probablyRejected;
+  if (error is ChannelClosedException && cause is! SocketException) return ConnectFailure.probablyRejected;
   return ConnectFailure.unreachable;
+}
+
+/// The peer accepted the TCP connection and then reset it (ECONNRESET / EPIPE), on Linux,
+/// Android, iOS/macOS or Windows.
+bool isConnectionReset(SocketException e) {
+  const resetCodes = {104, 32, 54, 10054, 10053};
+  final code = e.osError?.errorCode;
+  if (code != null && resetCodes.contains(code)) return true;
+  final text = '${e.message} ${e.osError?.message ?? ''}'.toLowerCase();
+  return text.contains('reset by peer') || text.contains('broken pipe');
 }
 
 /// [MessageChannel] over a socket with varint framing.

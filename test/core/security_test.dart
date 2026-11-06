@@ -101,6 +101,32 @@ void main() {
   });
 
   group('connection failure classification', () {
+    test('a connection reset before the TV says anything is a rejection (how Android reports it)', () {
+      const reset = SocketException('Connection reset by peer', osError: OSError('Connection reset by peer', 104));
+      const readFailed = SocketException('Read failed', osError: OSError('Connection reset by peer', 104));
+      const windowsReset = SocketException('An existing connection was forcibly closed', osError: OSError('', 10054));
+      for (final e in [reset, readFailed, windowsReset]) {
+        expect(classifyConnectFailure(e, receivedMessage: false), ConnectFailure.probablyRejected, reason: '$e');
+        expect(
+          classifyConnectFailure(ChannelClosedException(e), receivedMessage: false),
+          ConnectFailure.probablyRejected,
+          reason: 'wrapped $e',
+        );
+      }
+      // After the TV talked to us, a reset is just a dropped connection.
+      expect(classifyConnectFailure(reset, receivedMessage: true), ConnectFailure.unreachable);
+    });
+
+    test('a TV that is off or out of reach is still "unreachable", never "needs pairing"', () {
+      const refused = SocketException('Connection refused', osError: OSError('Connection refused', 111));
+      const timedOut = SocketException('Connection timed out', osError: OSError('Connection timed out', 110));
+      const noRoute = SocketException('No route to host', osError: OSError('No route to host', 113));
+      for (final e in [refused, timedOut, noRoute]) {
+        expect(classifyConnectFailure(e, receivedMessage: false), ConnectFailure.unreachable, reason: '$e');
+        expect(classifyConnectFailure(ChannelClosedException(e), receivedMessage: false), ConnectFailure.unreachable);
+      }
+    });
+
     test('one TLS failure is not yet "needs pairing" — the loop decides after two', () {
       expect(
         classifyConnectFailure(

@@ -61,6 +61,13 @@ abstract final class Polo {
           ))
           .toBytes();
 
+  /// Error status with no payload: tells the TV to abandon the pairing (closes its code screen).
+  static Uint8List abort() =>
+      (ProtoWriter()
+            ..varint(_fVersion, protocolVersion, always: true)
+            ..varint(_fStatus, statusError, always: true))
+          .toBytes();
+
   static Uint8List secret(List<int> secret) =>
       (_outer()..message(_fSecret, ProtoWriter()..bytes(1, secret, always: true))).toBytes();
 }

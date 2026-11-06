@@ -38,7 +38,7 @@ void main() {
             tv.receive(hex(v.inOptions));
           } else if (hexMsg == v.configuration) {
             tv.receive(hex(v.inConfigurationAck));
-          } else {
+          } else if (ProtoMessage.decode(msg).has(40)) {
             receivedSecret = ProtoMessage.decode(msg).message(40)!.bytes(1);
             tv.receive(toHex(receivedSecret!) == v.secretExpected ? hex(v.inSecretAck) : hex(v.inBadSecret));
           }
@@ -61,6 +61,22 @@ void main() {
       expect(() => session.finish(typo), throwsA(isA<PairingCodeException>()));
       expect(tv.sent.length, 3, reason: 'nothing sent for a bad code');
       await session.finish(v.secretCode);
+    });
+
+    test('cancelling mid-pairing tells the TV to close its code screen', () async {
+      await session.start();
+      await session.close();
+      final last = ProtoMessage.decode(tv.sent.last);
+      expect(last.uint32(2), 400, reason: 'error status = abort');
+      expect(tv.closed, isTrue);
+    });
+
+    test('closing after a successful pairing sends no abort', () async {
+      await session.start();
+      await session.finish(v.secretCode);
+      final count = tv.sent.length;
+      await session.close();
+      expect(tv.sent.length, count);
     });
 
     test('TV error status fails the pending step', () async {
