@@ -4,13 +4,15 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/app_launcher.dart';
 import '../core/device_store.dart';
 import '../core/key_presser.dart';
 import '../core/tv_connection.dart';
 import '../core/tv_shortcuts.dart';
 import '../core/voice_capture.dart';
 import '../protocol/key_codes.dart';
-import 'app_links.dart';
+import 'shortcuts/catalog.dart';
+import 'shortcuts/shortcut_tile.dart';
 import 'app_scope.dart';
 import 'keyboard_sheet.dart';
 import 'more_keys_sheet.dart';
@@ -33,6 +35,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
   late SavedTv _tv = widget.tv;
   TvConnection? _connection;
   TvShortcuts? _shortcuts;
+  AppLauncher? _launcher;
+
+  /// Id of the app being opened (shows a spinner on its tile).
+  String? _launching;
   late final AppLifecycleListener _lifecycle;
   late final AppServices _services;
   final _voice = VoiceCapture();
@@ -80,6 +86,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       setState(() {
         _connection = c;
         _shortcuts = TvShortcuts(c);
+        _launcher = AppLauncher(c);
         _identityFailed = false;
       });
     } on Object {
@@ -203,14 +210,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
         appBar: AppBar(
           titleSpacing: 0,
           title: _Header(tv: _tv),
-          actions: const [
+          actions: [
             Padding(
-              padding: EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.only(right: 12),
               child: RemoteKey(
                 keyCode: Keys.power,
                 label: 'Power',
                 icon: Icons.power_settings_new_rounded,
-                color: RemoteColors.power,
+                color: context.palette.power,
                 width: 48,
                 height: 48,
                 circle: true,
@@ -249,7 +256,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
                             const SizedBox(height: 20),
                             _mediaRow(),
                             const SizedBox(height: 24),
-                            _appsRow(c),
+                            _appsGrid(c),
                           ],
                         ),
                       );
@@ -294,10 +301,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
     showSelectedIcon: false,
     style: SegmentedButton.styleFrom(
       visualDensity: VisualDensity.compact,
-      selectedBackgroundColor: RemoteColors.keyPressed,
-      selectedForegroundColor: RemoteColors.led,
-      foregroundColor: RemoteColors.muted,
-      side: const BorderSide(color: RemoteColors.keyEdge),
+      selectedBackgroundColor: context.palette.keyPressed,
+      selectedForegroundColor: context.palette.led,
+      foregroundColor: context.palette.muted,
+      side: BorderSide(color: context.palette.keyEdge),
     ),
     segments: const [
       ButtonSegment(value: false, label: Text('D-pad')),
@@ -337,7 +344,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
               keyCode: Keys.volumeMute,
               label: c.muted ? 'Unmute' : 'Mute',
               icon: c.muted ? Icons.volume_off_rounded : Icons.volume_mute_rounded,
-              color: c.muted ? RemoteColors.led : null,
+              color: c.muted ? context.palette.led : null,
               width: 80,
             ),
             const SizedBox(height: 14),
@@ -376,30 +383,52 @@ class _RemoteScreenState extends State<RemoteScreen> {
     ],
   );
 
-  Widget _appsRow(TvConnection c) => Wrap(
-    spacing: 10,
-    runSpacing: 10,
-    alignment: WrapAlignment.center,
-    children: [
-      for (final app in appLinks)
-        OutlinedButton(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: RemoteColors.text,
-            side: const BorderSide(color: RemoteColors.keyEdge),
-            backgroundColor: RemoteColors.key,
-            minimumSize: const Size(0, 44),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+  /// The user's app shortcuts (Settings → Shortcuts), as a grid that grows with them.
+  Widget _appsGrid(TvConnection c) => ListenableBuilder(
+    listenable: _services.settings,
+    builder: (context, _) {
+      final apps = _services.settings.enabledShortcuts;
+      if (apps.isEmpty) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            'No app shortcuts. Add some in Settings → Shortcuts.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-          onPressed: c.isConnected
-              ? () {
-                  HapticFeedback.selectionClick();
-                  c.launchApp(app.link);
-                }
-              : null,
-          child: Text(app.name),
-        ),
-    ],
+        );
+      }
+      return Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        alignment: WrapAlignment.center,
+        children: [
+          for (final app in apps)
+            ShortcutButton(
+              shortcut: app,
+              busy: _launching == app.id,
+              onTap: c.isConnected ? () => _openApp(app) : null,
+            ),
+        ],
+      );
+    },
   );
+
+  Future<void> _openApp(TvShortcut app) async {
+    final launcher = _launcher;
+    if (launcher == null || _launching != null) return;
+    HapticFeedback.selectionClick();
+    setState(() => _launching = app.id);
+    final result = await launcher.open(app);
+    if (!mounted) return;
+    setState(() => _launching = null);
+    final message = switch (result) {
+      LaunchResult.notOpened => "${app.name} didn't open. It may not be installed on this TV.",
+      LaunchResult.notConfigured => "${app.name} isn't set up yet. Add its link in Settings → Shortcuts.",
+      LaunchResult.opened || LaunchResult.sent => null,
+    };
+    if (message != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 }
 
 class _Header extends StatelessWidget {
@@ -410,12 +439,12 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = RemoteScope.of(context);
     final (color, text) = switch (c.status) {
-      TvStatus.connected when !c.isOn => (RemoteColors.muted, 'Screen off'),
-      TvStatus.connected => (RemoteColors.ok, c.currentApp.isEmpty ? 'Connected' : appNameFor(c.currentApp)),
-      TvStatus.connecting => (RemoteColors.led, 'Connecting'),
-      TvStatus.unreachable => (RemoteColors.power, 'Not reachable'),
-      TvStatus.needsPairing => (RemoteColors.power, 'Needs pairing'),
-      TvStatus.identityChanged => (RemoteColors.power, 'Not verified'),
+      TvStatus.connected when !c.isOn => (context.palette.muted, 'Screen off'),
+      TvStatus.connected => (context.palette.ok, c.currentApp.isEmpty ? 'Connected' : appNameFor(c.currentApp)),
+      TvStatus.connecting => (context.palette.led, 'Connecting'),
+      TvStatus.unreachable => (context.palette.power, 'Not reachable'),
+      TvStatus.needsPairing => (context.palette.power, 'Needs pairing'),
+      TvStatus.identityChanged => (context.palette.power, 'Not verified'),
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -476,9 +505,9 @@ class _StatusBanner extends StatelessWidget {
               margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
               decoration: BoxDecoration(
-                color: RemoteColors.key,
+                color: context.palette.key,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: RemoteColors.power.withValues(alpha: 0.5)),
+                border: Border.all(color: context.palette.power.withValues(alpha: 0.5)),
               ),
               child: Row(
                 children: [
@@ -503,10 +532,10 @@ class _ActionKey extends StatelessWidget {
     button: true,
     label: label,
     child: Material(
-      color: RemoteColors.key,
+      color: context.palette.key,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(22),
-        side: const BorderSide(color: RemoteColors.keyEdge),
+        side: BorderSide(color: context.palette.keyEdge),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
@@ -514,7 +543,7 @@ class _ActionKey extends StatelessWidget {
         child: SizedBox(
           width: 64,
           height: 56,
-          child: Icon(icon, color: RemoteColors.text.withValues(alpha: onTap == null ? 0.4 : 1)),
+          child: Icon(icon, color: context.palette.text.withValues(alpha: onTap == null ? 0.4 : 1)),
         ),
       ),
     ),
@@ -544,14 +573,16 @@ class _MicKey extends StatelessWidget {
           width: 80,
           height: 56,
           decoration: BoxDecoration(
-            color: listening ? RemoteColors.led : RemoteColors.key,
+            color: listening ? context.palette.led : context.palette.key,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: listening ? RemoteColors.led : RemoteColors.keyEdge),
-            boxShadow: listening ? [BoxShadow(color: RemoteColors.led.withValues(alpha: 0.45), blurRadius: 18)] : null,
+            border: Border.all(color: listening ? context.palette.led : context.palette.keyEdge),
+            boxShadow: listening
+                ? [BoxShadow(color: context.palette.led.withValues(alpha: 0.45), blurRadius: 18)]
+                : null,
           ),
           child: Icon(
             Icons.mic_none_rounded,
-            color: listening ? RemoteColors.body : RemoteColors.text.withValues(alpha: enabled ? 1 : 0.4),
+            color: listening ? context.palette.body : context.palette.text.withValues(alpha: enabled ? 1 : 0.4),
           ),
         ),
       ),

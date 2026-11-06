@@ -60,7 +60,7 @@ class _MoreKeys extends StatelessWidget {
             ]),
             Text(
               'Some keys only work on TVs with a tuner or in apps that support them.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: RemoteColors.muted),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: context.palette.muted),
               textAlign: TextAlign.center,
             ),
           ],

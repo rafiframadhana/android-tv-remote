@@ -97,6 +97,26 @@ class TvConnection extends ChangeNotifier {
     return s.startVoice();
   }
 
+  /// Waits until the TV reports a foreground app matching [test], or [timeout] passes.
+  Future<bool> waitForApp(bool Function(String app) test, Duration timeout) async {
+    if (test(currentApp)) return true;
+    final done = Completer<bool>();
+    void check() {
+      if (!done.isCompleted && test(currentApp)) done.complete(true);
+    }
+
+    addListener(check);
+    final timer = Timer(timeout, () {
+      if (!done.isCompleted) done.complete(false);
+    });
+    try {
+      return await done.future;
+    } finally {
+      timer.cancel();
+      removeListener(check);
+    }
+  }
+
   bool _disposed = false;
 
   @override

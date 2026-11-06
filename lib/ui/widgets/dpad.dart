@@ -80,7 +80,7 @@ class _DPadState extends State<DPad> {
       alignment: at,
       child: Padding(
         padding: EdgeInsets.all(s * 0.06),
-        child: Icon(icon, size: 34, color: RemoteColors.text.withValues(alpha: enabled ? 0.9 : 0.35)),
+        child: Icon(icon, size: 34, color: context.palette.text.withValues(alpha: enabled ? 0.9 : 0.35)),
       ),
     );
 
@@ -94,7 +94,7 @@ class _DPadState extends State<DPad> {
           width: s,
           height: s,
           child: CustomPaint(
-            painter: _RingPainter(pressed: _pressed),
+            painter: _RingPainter(pressed: _pressed, p: context.palette),
             child: Stack(
               children: [
                 chevron(Icons.keyboard_arrow_up_rounded, Alignment.topCenter),
@@ -105,7 +105,7 @@ class _DPadState extends State<DPad> {
                   child: Text(
                     'OK',
                     style: TextStyle(
-                      color: RemoteColors.text.withValues(alpha: enabled ? 1 : 0.35),
+                      color: context.palette.text.withValues(alpha: enabled ? 1 : 0.35),
                       fontWeight: FontWeight.w700,
                       fontSize: 18,
                       letterSpacing: 0.5,
@@ -122,8 +122,9 @@ class _DPadState extends State<DPad> {
 }
 
 class _RingPainter extends CustomPainter {
-  _RingPainter({required this.pressed});
+  _RingPainter({required this.pressed, required this.p});
   final _Zone? pressed;
+  final RemotePalette p;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -131,13 +132,13 @@ class _RingPainter extends CustomPainter {
     final r = size.width / 2;
     final inner = size.width * 0.22;
 
-    canvas.drawCircle(c, r, Paint()..color = RemoteColors.key);
+    canvas.drawCircle(c, r, Paint()..color = p.key);
     canvas.drawCircle(
       c,
       r - 0.5,
       Paint()
         ..style = PaintingStyle.stroke
-        ..color = RemoteColors.keyEdge,
+        ..color = p.keyEdge,
     );
 
     if (pressed != null && pressed != _Zone.center) {
@@ -158,7 +159,7 @@ class _RingPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = band
           ..strokeCap = StrokeCap.round
-          ..color = RemoteColors.led.withValues(alpha: 0.22),
+          ..color = p.led.withValues(alpha: 0.22),
       );
       // The "LED" edge: a thin bright arc on the rim.
       canvas.drawArc(
@@ -170,24 +171,24 @@ class _RingPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 3
           ..strokeCap = StrokeCap.round
-          ..color = RemoteColors.led,
+          ..color = p.led,
       );
     }
 
     final centerPressed = pressed == _Zone.center;
-    canvas.drawCircle(c, inner, Paint()..color = centerPressed ? RemoteColors.keyPressed : const Color(0xFF2F384E));
+    canvas.drawCircle(c, inner, Paint()..color = centerPressed ? p.keyPressed : p.okKey);
     canvas.drawCircle(
       c,
       inner,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = centerPressed ? 2.5 : 1
-        ..color = centerPressed ? RemoteColors.led : RemoteColors.keyEdge,
+        ..color = centerPressed ? p.led : p.keyEdge,
     );
   }
 
   @override
-  bool shouldRepaint(_RingPainter old) => old.pressed != pressed;
+  bool shouldRepaint(_RingPainter old) => old.pressed != pressed || old.p != p;
 }
 
 /// Swipe surface: each ~36 px of travel along the dominant axis is one arrow
@@ -298,15 +299,18 @@ class _TouchpadState extends State<Touchpad> {
             width: widget.size,
             height: widget.size,
             decoration: BoxDecoration(
-              color: RemoteColors.key,
+              color: context.palette.key,
               borderRadius: BorderRadius.circular(36),
-              border: Border.all(color: _active ? RemoteColors.led : RemoteColors.keyEdge, width: _active ? 2 : 1),
+              border: Border.all(
+                color: _active ? context.palette.led : context.palette.keyEdge,
+                width: _active ? 2 : 1,
+              ),
             ),
             alignment: Alignment.center,
             child: Text(
               'Swipe to move\nTap to select',
               textAlign: TextAlign.center,
-              style: TextStyle(color: RemoteColors.muted.withValues(alpha: enabled ? 1 : 0.4)),
+              style: TextStyle(color: context.palette.muted.withValues(alpha: enabled ? 1 : 0.4)),
             ),
           ),
         ),

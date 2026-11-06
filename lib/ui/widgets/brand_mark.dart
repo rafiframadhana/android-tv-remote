@@ -14,11 +14,14 @@ class BrandMark extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     label: 'TV Remote',
     image: true,
-    child: CustomPaint(size: Size.square(size), painter: _BrandMarkPainter()),
+    child: CustomPaint(size: Size.square(size), painter: _BrandMarkPainter(context.palette)),
   );
 }
 
 class _BrandMarkPainter extends CustomPainter {
+  _BrandMarkPainter(this.p);
+  final RemotePalette p;
+
   static const _rIn = 58.0, _rOut = 104.0, _gap = 11.0, _dot = 34.0, _c = 128.0;
 
   /// Annular segment centred on [midDeg] spanning ±[half]°, with straight cuts of constant width [_gap].
@@ -47,11 +50,11 @@ class _BrandMarkPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.scale(size.width / 256);
-    canvas.drawPath(_segment(180, 135), Paint()..color = RemoteColors.text);
-    canvas.drawPath(_segment(0, 45), Paint()..color = RemoteColors.led);
-    canvas.drawCircle(const Offset(_c, _c), _dot, Paint()..color = RemoteColors.text);
+    canvas.drawPath(_segment(180, 135), Paint()..color = p.text);
+    canvas.drawPath(_segment(0, 45), Paint()..color = p.led);
+    canvas.drawCircle(const Offset(_c, _c), _dot, Paint()..color = p.text);
   }
 
   @override
-  bool shouldRepaint(_BrandMarkPainter oldDelegate) => false;
+  bool shouldRepaint(_BrandMarkPainter oldDelegate) => oldDelegate.p != p;
 }

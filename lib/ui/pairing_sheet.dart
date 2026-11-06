@@ -219,7 +219,7 @@ class _PairingSheetState extends State<_PairingSheet> {
             switch (_stage) {
               _Stage.connecting => const _Row(spinner: true, text: 'Connecting to the TV…'),
               _Stage.verifying => const _Row(spinner: true, text: 'Checking the code…'),
-              _Stage.failed => Text(_error ?? '', style: const TextStyle(color: RemoteColors.power)),
+              _Stage.failed => Text(_error ?? '', style: TextStyle(color: context.palette.power)),
               _Stage.enterCode => Text(
                 _join != null
                     ? 'Another phone already uses this TV. Enter the 6-character code shown on the TV to '
@@ -251,7 +251,7 @@ class _PairingSheetState extends State<_PairingSheet> {
                   counterText: '',
                   errorText: _stage == _Stage.enterCode ? _error : null,
                   filled: true,
-                  fillColor: RemoteColors.key,
+                  fillColor: context.palette.key,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                 ),
                 onChanged: (v) {

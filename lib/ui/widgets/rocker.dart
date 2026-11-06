@@ -36,17 +36,20 @@ class Rocker extends StatelessWidget {
         duration: const Duration(milliseconds: 70),
         width: 64,
         height: 62,
-        decoration: BoxDecoration(color: pressed ? RemoteColors.keyPressed : Colors.transparent, borderRadius: radius),
-        child: Icon(icon, color: RemoteColors.text.withValues(alpha: enabled ? 1 : 0.4)),
+        decoration: BoxDecoration(
+          color: pressed ? context.palette.keyPressed : Colors.transparent,
+          borderRadius: radius,
+        ),
+        child: Icon(icon, color: context.palette.text.withValues(alpha: enabled ? 1 : 0.4)),
       ),
     );
 
     return Container(
       width: 64,
       decoration: BoxDecoration(
-        color: RemoteColors.key,
+        color: context.palette.key,
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: RemoteColors.keyEdge),
+        border: Border.all(color: context.palette.keyEdge),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -54,7 +57,7 @@ class Rocker extends StatelessWidget {
           half(upCode, upIcon, upLabel, const BorderRadius.vertical(top: Radius.circular(32))),
           Text(
             legend,
-            style: const TextStyle(color: RemoteColors.muted, fontSize: 12, fontWeight: FontWeight.w600),
+            style: TextStyle(color: context.palette.muted, fontSize: 12, fontWeight: FontWeight.w600),
           ),
           half(downCode, downIcon, downLabel, const BorderRadius.vertical(bottom: Radius.circular(32))),
         ],

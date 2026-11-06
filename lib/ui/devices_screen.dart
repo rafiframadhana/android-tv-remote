@@ -8,6 +8,7 @@ import '../core/discovery.dart';
 import 'app_scope.dart';
 import 'pairing_sheet.dart';
 import 'remote_screen.dart';
+import 'settings_screen.dart';
 import 'theme.dart';
 import 'widgets/brand_mark.dart';
 
@@ -89,7 +90,18 @@ class _DevicesScreenState extends State<DevicesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Row(children: [BrandMark(size: 28), SizedBox(width: 12), Text('TVs')])),
+      appBar: AppBar(
+        title: const Row(children: [BrandMark(size: 28), SizedBox(width: 12), Text('TVs')]),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () =>
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen())),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addByIp,
         icon: const Icon(Icons.add),
@@ -139,13 +151,13 @@ class _DevicesScreenState extends State<DevicesScreen> {
                   children: [
                     Expanded(child: _Section('On this Wi-Fi')),
                     if (_services.discovery.isScanning)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(right: 12),
                         child: Row(
                           children: [
                             SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)),
                             SizedBox(width: 8),
-                            Text('Searching', style: TextStyle(color: RemoteColors.muted)),
+                            Text('Searching', style: TextStyle(color: context.palette.muted)),
                           ],
                         ),
                       )
@@ -176,9 +188,9 @@ class _DevicesScreenState extends State<DevicesScreen> {
                     title: d.name,
                     subtitle: d.host,
                     icon: Icons.add_link_rounded,
-                    trailing: const Text(
+                    trailing: Text(
                       'Pair',
-                      style: TextStyle(color: RemoteColors.led, fontWeight: FontWeight.w600),
+                      style: TextStyle(color: context.palette.led, fontWeight: FontWeight.w600),
                     ),
                     onTap: () => _pair(d.host, d.name),
                   ),
@@ -203,7 +215,7 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-    child: Text(text, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: RemoteColors.muted)),
+    child: Text(text, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: context.palette.muted)),
   );
 }
 
@@ -228,14 +240,14 @@ class _TvTile extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Material(
-      color: RemoteColors.key,
+      color: context.palette.key,
       borderRadius: BorderRadius.circular(18),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        leading: Icon(icon, color: RemoteColors.text),
+        leading: Icon(icon, color: context.palette.text),
         title: Text(title),
-        subtitle: Text(subtitle, style: const TextStyle(color: RemoteColors.muted)),
-        trailing: trailing ?? const Icon(Icons.chevron_right_rounded, color: RemoteColors.muted),
+        subtitle: Text(subtitle, style: TextStyle(color: context.palette.muted)),
+        trailing: trailing ?? Icon(Icons.chevron_right_rounded, color: context.palette.muted),
         onTap: onTap,
         onLongPress: onLongPress,
       ),

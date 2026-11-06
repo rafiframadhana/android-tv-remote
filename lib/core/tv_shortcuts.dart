@@ -56,7 +56,7 @@ class TvShortcuts {
       if (!needsNav) {
         final before = _tv.currentApp;
         _tv.sendKey(target.keyCode);
-        if (await _waitFor((app) => target.matches(app, before), const Duration(milliseconds: 1500))) {
+        if (await _tv.waitForApp((app) => target.matches(app, before), const Duration(milliseconds: 1500))) {
           return ShortcutResult.opened;
         }
       }
@@ -77,7 +77,7 @@ class TvShortcuts {
   Future<ShortcutResult> _navigate(_Target target) async {
     // Go home and learn which home screen this TV has.
     _tv.sendKey(Keys.home);
-    final home = await _waitFor(_launchers.contains, const Duration(milliseconds: 2500));
+    final home = await _tv.waitForApp(_launchers.contains, const Duration(milliseconds: 2500));
     if (!home || _tv.currentApp != _classicLauncher) return ShortcutResult.unsupported;
     await _pause(500);
     for (var i = 0; i < 4; i++) {
@@ -93,31 +93,14 @@ class TvShortcuts {
       await _pause(150);
     }
     _tv.sendKey(Keys.dpadCenter);
-    final opened = await _waitFor((app) => target.matches(app, _classicLauncher), const Duration(milliseconds: 2000));
+    final opened = await _tv.waitForApp(
+      (app) => target.matches(app, _classicLauncher),
+      const Duration(milliseconds: 2000),
+    );
     return opened ? ShortcutResult.opened : ShortcutResult.unconfirmed;
   }
 
   Future<void> _pause(int ms) => Future<void>.delayed(Duration(milliseconds: ms));
-
-  /// Waits until the TV reports a foreground app matching [test], or [timeout] passes.
-  Future<bool> _waitFor(bool Function(String app) test, Duration timeout) async {
-    if (test(_tv.currentApp)) return true;
-    final done = Completer<bool>();
-    void check() {
-      if (!done.isCompleted && test(_tv.currentApp)) done.complete(true);
-    }
-
-    _tv.addListener(check);
-    final timer = Timer(timeout, () {
-      if (!done.isCompleted) done.complete(false);
-    });
-    try {
-      return await done.future;
-    } finally {
-      timer.cancel();
-      _tv.removeListener(check);
-    }
-  }
 }
 
 enum _Target {

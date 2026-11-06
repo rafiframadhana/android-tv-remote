@@ -107,7 +107,7 @@ class RemoteKey extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = RemoteScope.of(context).isConnected;
-    final fg = color ?? RemoteColors.text;
+    final fg = color ?? context.palette.text;
     return KeySurface(
       keyCode: keyCode,
       mode: mode,
@@ -118,10 +118,13 @@ class RemoteKey extends StatelessWidget {
         height: height,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: pressed ? RemoteColors.keyPressed : RemoteColors.key,
+          color: pressed ? context.palette.keyPressed : context.palette.key,
           borderRadius: circle ? null : BorderRadius.circular(height / 2.6),
           shape: circle ? BoxShape.circle : BoxShape.rectangle,
-          border: Border.all(color: pressed ? RemoteColors.led.withValues(alpha: 0.7) : RemoteColors.keyEdge, width: 1),
+          border: Border.all(
+            color: pressed ? context.palette.led.withValues(alpha: 0.7) : context.palette.keyEdge,
+            width: 1,
+          ),
         ),
         child: Opacity(
           opacity: enabled ? 1 : 0.4,

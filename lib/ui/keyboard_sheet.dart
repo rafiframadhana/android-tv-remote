@@ -58,7 +58,7 @@ class _KeyboardSheetState extends State<_KeyboardSheet> {
               decoration: InputDecoration(
                 hintText: 'Search or type',
                 filled: true,
-                fillColor: RemoteColors.key,
+                fillColor: context.palette.key,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                 suffixIcon: IconButton(
                   tooltip: 'Delete on TV',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tv_remote/core/app_settings.dart';
 import 'package:tv_remote/core/device_store.dart';
 import 'package:tv_remote/core/discovery.dart';
 import 'package:tv_remote/core/identity_store.dart';
@@ -26,6 +27,7 @@ void main() {
           devices: devices,
           discovery: _NoDiscovery(),
           share: ShareService(devices: devices, identity: IdentityStore()),
+          settings: AppSettings(),
         ),
       ),
     );
