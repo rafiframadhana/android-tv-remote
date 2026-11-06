@@ -470,16 +470,17 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Future<void> _openApp(TvShortcut app) async {
     final launcher = _launcher;
-    if (launcher == null || _launching != null) return;
+    if (launcher == null) return;
     HapticFeedback.selectionClick();
+    // Another tap while one app is still starting replaces it (the launcher drops the older wait).
     setState(() => _launching = app.id);
     final result = await launcher.open(app);
     if (!mounted) return;
-    setState(() => _launching = null);
+    if (_launching == app.id) setState(() => _launching = null);
     final message = switch (result) {
       LaunchResult.notOpened => "${app.name} didn't open. It may not be installed on this TV.",
       LaunchResult.notConfigured => "${app.name} isn't set up yet. Add its link in Settings → Shortcuts.",
-      LaunchResult.opened || LaunchResult.sent => null,
+      LaunchResult.opened || LaunchResult.sent || LaunchResult.superseded => null,
     };
     if (message != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }

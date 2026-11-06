@@ -100,7 +100,10 @@ dart run tool/tv_e2e.dart share-join 192.168.1.20 .e2e-b 127.0.0.1:<port printed
 dart run tool/tv_e2e.dart pair-cancel 192.168.1.20 .e2e
 
 # The app's reconnect logic against a TV that has forgotten this client
-REAL_TV=192.168.1.20 REAL_TV_ID=.e2e flutter test --tags manual --run-skipped test/manual/
+REAL_TV=192.168.1.20 REAL_TV_ID=.e2e flutter test --tags manual --run-skipped test/manual/real_tv_rejected_test.dart
+
+# Open catalogue apps from a cold start and print what the app would report (ADB optional)
+REAL_TV=192.168.1.20 REAL_TV_ID=.e2e ADB=adb flutter test --tags manual --run-skipped test/manual/real_tv_launch_test.dart
 ```
 
 `.e2e*/` folders hold client keys and are git-ignored.

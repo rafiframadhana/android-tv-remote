@@ -8,6 +8,7 @@ import '../protocol/remote_session.dart';
 import 'device_store.dart';
 import 'pinning.dart';
 import 'tls.dart';
+import 'app_launcher.dart';
 import 'tv_typing.dart';
 
 enum TvStatus {
@@ -23,7 +24,7 @@ enum TvStatus {
 
 /// Keeps a live remote session to one TV, reconnecting with backoff
 /// (0.1 s → 30 s, like androidtvremote2) until stopped.
-class TvConnection extends ChangeNotifier implements TypingTarget {
+class TvConnection extends ChangeNotifier implements TypingTarget, LaunchTarget {
   TvConnection({required SavedTv tv, required this.identity, this.onTvChanged, this.onConnected}) : _current = tv;
 
   final ClientIdentity identity;
@@ -46,6 +47,7 @@ class TvConnection extends ChangeNotifier implements TypingTarget {
   int _generation = 0;
   Completer<void>? _wake;
 
+  @override
   bool get isConnected => _status == TvStatus.connected && _session != null;
   bool get isOn => _session?.isOn ?? false;
   @override
@@ -54,6 +56,8 @@ class TvConnection extends ChangeNotifier implements TypingTarget {
   int? get volumeMax => _session?.volumeMax;
   bool get muted => _session?.muted ?? false;
   bool get voiceSupported => _session?.voiceSupported ?? false;
+  @override
+  int get errorReplies => _session?.errorReplies ?? 0;
 
   /// A text field is focused on the TV (its keyboard is up).
   @override
@@ -115,22 +119,29 @@ class TvConnection extends ChangeNotifier implements TypingTarget {
   }
 
   /// Waits until the TV reports a foreground app matching [test], or [timeout] passes.
-  Future<bool> waitForApp(bool Function(String app) test, Duration timeout) async {
-    if (test(currentApp)) return true;
-    final done = Completer<bool>();
-    void check() {
-      if (!done.isCompleted && test(currentApp)) done.complete(true);
+  Future<bool> waitForApp(bool Function(String app) test, Duration timeout) async =>
+      await waitFor(() => test(currentApp) ? true : null, timeout) ?? false;
+
+  @override
+  Future<T?> waitFor<T extends Object>(T? Function() check, Duration timeout) async {
+    final first = check();
+    if (first != null) return first;
+    final done = Completer<T?>();
+    void listener() {
+      if (done.isCompleted) return;
+      final r = check();
+      if (r != null) done.complete(r);
     }
 
-    addListener(check);
+    addListener(listener);
     final timer = Timer(timeout, () {
-      if (!done.isCompleted) done.complete(false);
+      if (!done.isCompleted) done.complete(null);
     });
     try {
       return await done.future;
     } finally {
       timer.cancel();
-      removeListener(check);
+      removeListener(listener);
     }
   }
 

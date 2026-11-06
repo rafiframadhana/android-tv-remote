@@ -55,6 +55,9 @@ class RemoteSession {
   /// What the focused TV text field currently contains, as reported by the TV.
   String textFieldValue = '';
 
+  /// Error replies received (the TV doesn't say which request they answer).
+  int errorReplies = 0;
+
   int _imeCounter = 0;
   int _imeFieldCounter = 0;
 
@@ -275,7 +278,11 @@ class RemoteSession {
         final wasActive = textFieldActive;
         textFieldActive = true;
         if (_applyTvFieldValue(msg.value) || !wasActive) _notify();
-      case RemoteError() || RemoteUnknown():
+      case RemoteError():
+        // E.g. an app link nothing on the TV can open (verified: `spotify://` without Spotify).
+        errorReplies++;
+        _notify();
+      case RemoteUnknown():
         break;
     }
   }
