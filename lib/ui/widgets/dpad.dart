@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -203,13 +205,64 @@ class _TouchpadState extends State<Touchpad> {
   Offset _acc = Offset.zero;
   bool _active = false;
 
+  // Gestures are read from raw pointer events: an eager recognizer claims
+  // every touch on the pad so the enclosing scroll view can't steal vertical
+  // swipes, which also means GestureDetector's tap/long-press/pan would lose.
+  int? _pointer;
+  Offset _start = Offset.zero;
+  bool _moved = false;
+  bool _longActive = false;
+  Timer? _longTimer;
+
   void _send(int code, [KeyDirection d = KeyDirection.short]) {
     HapticFeedback.selectionClick();
     RemoteScope.read(context).sendKey(code, d);
   }
 
-  void _onPan(DragUpdateDetails d) {
-    _acc += d.delta;
+  void _down(PointerDownEvent e) {
+    if (_pointer != null) return;
+    _pointer = e.pointer;
+    _start = e.position;
+    _acc = Offset.zero;
+    _moved = false;
+    _longActive = false;
+    _longTimer = Timer(kLongPressTimeout, () {
+      _longActive = true;
+      _send(Keys.dpadCenter, KeyDirection.startLong);
+    });
+    setState(() => _active = true);
+  }
+
+  void _move(PointerMoveEvent e) {
+    if (e.pointer != _pointer) return;
+    if (!_moved && (e.position - _start).distance > kTouchSlop) {
+      _moved = true;
+      if (!_longActive) _longTimer?.cancel();
+    }
+    if (!_longActive) _feed(e.delta);
+  }
+
+  void _end(PointerEvent e, {bool cancel = false}) {
+    if (e.pointer != _pointer) return;
+    _longTimer?.cancel();
+    if (_longActive) {
+      _send(Keys.dpadCenter, KeyDirection.endLong);
+    } else if (!cancel && !_moved) {
+      _send(Keys.dpadCenter);
+    }
+    _pointer = null;
+    _longActive = false;
+    setState(() => _active = false);
+  }
+
+  @override
+  void dispose() {
+    _longTimer?.cancel();
+    super.dispose();
+  }
+
+  void _feed(Offset delta) {
+    _acc += delta;
     while (_acc.dx.abs() >= _step || _acc.dy.abs() >= _step) {
       if (_acc.dx.abs() >= _acc.dy.abs()) {
         final right = _acc.dx > 0;
@@ -228,31 +281,33 @@ class _TouchpadState extends State<Touchpad> {
     final enabled = RemoteScope.of(context).isConnected;
     return Semantics(
       label: 'Touchpad. Swipe to move, tap to select.',
-      child: GestureDetector(
-        onTap: () => _send(Keys.dpadCenter),
-        onLongPressStart: (_) => _send(Keys.dpadCenter, KeyDirection.startLong),
-        onLongPressEnd: (_) => _send(Keys.dpadCenter, KeyDirection.endLong),
-        onPanStart: (_) => setState(() {
-          _acc = Offset.zero;
-          _active = true;
-        }),
-        onPanUpdate: _onPan,
-        onPanEnd: (_) => setState(() => _active = false),
-        onPanCancel: () => setState(() => _active = false),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: RemoteColors.key,
-            borderRadius: BorderRadius.circular(36),
-            border: Border.all(color: _active ? RemoteColors.led : RemoteColors.keyEdge, width: _active ? 2 : 1),
+      child: RawGestureDetector(
+        gestures: {
+          EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+            EagerGestureRecognizer.new,
+            (_) {},
           ),
-          alignment: Alignment.center,
-          child: Text(
-            'Swipe to move\nTap to select',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: RemoteColors.muted.withValues(alpha: enabled ? 1 : 0.4)),
+        },
+        child: Listener(
+          onPointerDown: _down,
+          onPointerMove: _move,
+          onPointerUp: _end,
+          onPointerCancel: (e) => _end(e, cancel: true),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              color: RemoteColors.key,
+              borderRadius: BorderRadius.circular(36),
+              border: Border.all(color: _active ? RemoteColors.led : RemoteColors.keyEdge, width: _active ? 2 : 1),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              'Swipe to move\nTap to select',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: RemoteColors.muted.withValues(alpha: enabled ? 1 : 0.4)),
+            ),
           ),
         ),
       ),
