@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tv_remote/protocol/framing.dart';
 import 'package:tv_remote/protocol/pairing_crypto.dart';
 import 'package:tv_remote/protocol/polo_messages.dart';
+import 'package:tv_remote/protocol/proto.dart';
 import 'package:tv_remote/protocol/remote_messages.dart';
 
 import '../fixtures/vectors.dart' as v;
@@ -48,11 +49,14 @@ void main() {
     test('key short', () => expect(toHex(RemoteOut.keyInject(19, KeyDirection.short)), v.keyDpadUpShort));
     test('key start long', () => expect(toHex(RemoteOut.keyInject(23, KeyDirection.startLong)), v.keyCenterStartLong));
     test('key > 127 end long', () => expect(toHex(RemoteOut.keyInject(286, KeyDirection.endLong)), v.key286EndLong));
-    test('ime text', () => expect(toHex(RemoteOut.imeText(imeCounter: 3, fieldCounter: 4, text: 'héllo')), v.imeText));
-    test(
-      'ime text with zero counters',
-      () => expect(toHex(RemoteOut.imeText(imeCounter: 0, fieldCounter: 0, text: 'a')), v.imeTextZeroCounters),
-    );
+    test('ime edit replaces a range', () {
+      final m = ProtoMessage.decode(
+        RemoteOut.imeEdit(imeCounter: 34, fieldCounter: 97, insert: 1, start: 0, end: 3, value: 'héllo'),
+      ).message(21)!;
+      final e = m.messages(3).single;
+      expect((m.int32(1), m.int32(2), e.int32(1)), (34, 97, 1));
+      expect((e.message(2)!.int32(1), e.message(2)!.int32(2), e.message(2)!.string(3)), (0, 3, 'héllo'));
+    });
     test('app link', () => expect(toHex(RemoteOut.appLink('https://www.youtube.com')), v.appLink));
     test('voice begin', () => expect(toHex(RemoteOut.voiceBegin(9)), v.voiceBegin));
     test('voice payload', () => expect(toHex(RemoteOut.voicePayload(9, [0, 1, 2, 3])), v.voicePayload));

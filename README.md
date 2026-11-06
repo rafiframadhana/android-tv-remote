@@ -28,8 +28,14 @@ TV needs no extra app and no developer mode.
   - A tap is a short press and holding is a long press. Arrows, volume and channel repeat while held.
   - Settings and Input fall back to navigating the TV's home screen on TVs that ignore those keys
     (seen on a Panasonic/Realtek Android TV 9).
-- Phone-only extras: a touchpad swipe mode, typing into the TV's search box, and hold-to-talk voice
-  search.
+- Phone-only extras: a touchpad swipe mode, a live keyboard and hold-to-talk voice search.
+- **Live keyboard.** When a text box opens on the TV (search in YouTube, Stremio, Play Store and so
+  on), the phone keyboard opens by itself. What you type appears on the TV as you type it, changes
+  made on the TV show up on the phone, and it closes when the TV's keyboard closes.
+  - YouTube doesn't report its search box, so there you open the keyboard with the keyboard
+    button. Typing goes to YouTube's search, and Search shows the results. Because a Backspace in
+    an empty YouTube box acts as Back, deletions are sent as a new search instead
+    (`lib/core/tv_typing.dart`).
 - It shows whether the screen is on, the volume level, and which app is open.
 - It reconnects on its own and follows the TV to a new IP address.
 
@@ -80,7 +86,9 @@ iOS has to be built on a Mac (`flutter build ios`).
 # Pair, then write the code shown on the TV to .e2e/code.txt
 dart run tool/tv_e2e.dart pair 192.168.1.20 .e2e
 
-# Remote commands: key:<code> long:<code> text:<string> link:<uri> voice:<wav> wait:<ms>
+# Remote commands: key:<code> long:<code> text:<string> type:<string> link:<uri> voice:<wav> wait:<ms>
+#   phone:<text> / phone-enter:<text> run the app's keyboard logic (including the YouTube handling)
+# (--raw-ime prints the TV's keyboard messages)
 dart run tool/tv_e2e.dart remote 192.168.1.20 .e2e 6466 key:3 wait:1000 key:20 link:tv://
 dart run tool/tv_e2e.dart remote 192.168.1.20 .e2e 6466 --novoice key:84   # Search key without voice
 

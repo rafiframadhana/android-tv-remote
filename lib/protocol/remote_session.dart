@@ -48,8 +48,20 @@ class RemoteSession {
   int? volumeLevel;
   int? volumeMax;
   bool muted = false;
+
+  /// A text field is focused on the TV (its keyboard is up) — drives the phone's live keyboard.
+  bool textFieldActive = false;
+
+  /// What the focused TV text field currently contains, as reported by the TV.
+  String textFieldValue = '';
+
   int _imeCounter = 0;
   int _imeFieldCounter = 0;
+
+  /// A focus message (field 20) carried counters. From then on those are the ones to trust: the TV
+  /// also sends empty batch edits with stale counters (Play Store: 1/0 right after focusing a box
+  /// that is really at 53), and edits carrying those are ignored.
+  bool _focusCounters = false;
 
   Completer<int>? _voiceBegin;
   VoiceStream? _voice;
@@ -67,6 +79,10 @@ class RemoteSession {
   Stream<RemoteIn> get inbound => _inbound.stream;
   final _inbound = StreamController<RemoteIn>.broadcast(sync: true);
 
+  /// Every raw message from the TV, before decoding (diagnostics).
+  Stream<Uint8List> get rawInbound => _rawInbound.stream;
+  final _rawInbound = StreamController<Uint8List>.broadcast(sync: true);
+
   bool get isClosed => _closed;
 
   /// Feature bitmask in effect after negotiation (what we asked for ∩ what the TV offers).
@@ -78,15 +94,65 @@ class RemoteSession {
   void sendKey(int keyCode, [KeyDirection direction = KeyDirection.short]) =>
       _send(RemoteOut.keyInject(keyCode, direction));
 
-  /// Sets the focused TV text field to [text]. Empty text is sent as a delete key,
-  /// since the protocol can't express an empty field.
+  /// Sets the focused TV text field to [text] (the phone's keyboard mirrors the TV's field).
+  ///
+  /// The TV applies an edit by replacing the range start..end of its field with the value, or
+  /// inserting at its cursor when start == end (verified on a Panasonic Android TV with Stremio and
+  /// Play Store). So the whole field is replaced each time: 0..current length. Sending the full
+  /// text with start == end, as androidtvremote2 does, appends it again on every keystroke.
   void sendText(String text) {
-    if (text.isEmpty) {
-      sendKey(Keys.del);
-      return;
-    }
-    _send(RemoteOut.imeText(imeCounter: _imeCounter, fieldCounter: _imeFieldCounter, text: text));
+    final current = textFieldValue;
+    if (text == current) return;
+    _send(
+      RemoteOut.imeEdit(
+        imeCounter: _imeCounter,
+        fieldCounter: _imeFieldCounter,
+        insert: text.isEmpty ? 0 : 1,
+        start: 0,
+        end: current.length,
+        value: text,
+      ),
+    );
+    // Optimistic: the TV's echo confirms, and fast typing must not use the old length.
+    textFieldValue = text;
+    _pendingTexts.add(text);
+    if (_pendingTexts.length > 32) _pendingTexts.removeAt(0);
   }
+
+  /// Values sent but not yet echoed by the TV, oldest first.
+  final List<String> _pendingTexts = [];
+
+  /// Applies the field content the TV reports. Echoes of our own older edits are skipped while
+  /// newer ones are still in flight (otherwise fast typing would briefly roll back); anything else
+  /// is a change made on the TV and is taken as is. Returns whether [textFieldValue] changed.
+  bool _applyTvFieldValue(String value) {
+    final i = _pendingTexts.indexOf(value);
+    if (i >= 0) {
+      _pendingTexts.removeRange(0, i + 1);
+      if (_pendingTexts.isNotEmpty) return false;
+    } else {
+      _pendingTexts.clear();
+    }
+    if (value == textFieldValue) return false;
+    textFieldValue = value;
+    return true;
+  }
+
+  /// Raw IME edit with the current counters (diagnostics / experiments).
+  void sendImeEdit({required int insert, required int start, required int end, required String value}) => _send(
+    RemoteOut.imeEdit(
+      imeCounter: _imeCounter,
+      fieldCounter: _imeFieldCounter,
+      insert: insert,
+      start: start,
+      end: end,
+      value: value,
+    ),
+  );
+
+  /// Types [suffix] at position [at] without deleting anything, for apps that don't report their
+  /// text box (YouTube), where a deletion of text that isn't there acts as Back.
+  void appendText(int at, String suffix) => sendImeEdit(insert: 1, start: at, end: at, value: suffix);
 
   void launchApp(String link) => _send(RemoteOut.appLink(link));
 
@@ -147,6 +213,7 @@ class RemoteSession {
 
   void _onMessage(Uint8List data) {
     _receivedMessage = true;
+    _rawInbound.add(data);
     _resetIdle();
     _resetSilence();
     final RemoteIn msg;
@@ -177,17 +244,38 @@ class RemoteSession {
         muted = msg.muted;
         _notify();
       case RemoteImeKeyInject():
-        if (msg.appPackage != currentApp) {
-          currentApp = msg.appPackage;
-          _notify();
+        if (msg.imeCounter case final c?) {
+          _imeCounter = c;
+          _focusCounters = true;
         }
+        if (msg.fieldCounter case final c?) _imeFieldCounter = c;
+        var changed = false;
+        if (msg.appPackage.isNotEmpty && msg.appPackage != currentApp) {
+          currentApp = msg.appPackage;
+          changed = true;
+        }
+        if (msg.hasTextField != textFieldActive) {
+          textFieldActive = msg.hasTextField;
+          if (!msg.hasTextField) _pendingTexts.clear();
+          changed = true;
+        }
+        if (msg.hasTextField && _applyTvFieldValue(msg.fieldText)) changed = true;
+        if (changed) _notify();
       case RemoteImeBatchEdit():
-        _imeCounter = msg.imeCounter;
-        _imeFieldCounter = msg.fieldCounter;
+        if (!_focusCounters) {
+          _imeCounter = msg.imeCounter;
+          _imeFieldCounter = msg.fieldCounter;
+        }
+        if (msg.text case final t? when _applyTvFieldValue(t)) _notify();
       case RemoteVoiceBegin():
         final c = _voiceBegin;
         if (c != null && !c.isCompleted) c.complete(msg.sessionId);
-      case RemoteImeShowRequest() || RemoteError() || RemoteUnknown():
+      case RemoteImeShowRequest():
+        if (msg.fieldCounter case final c?) _imeFieldCounter = c;
+        final wasActive = textFieldActive;
+        textFieldActive = true;
+        if (_applyTvFieldValue(msg.value) || !wasActive) _notify();
+      case RemoteError() || RemoteUnknown():
         break;
     }
   }
@@ -206,6 +294,7 @@ class RemoteSession {
     _done.complete(cause);
     _changes.close();
     _inbound.close();
+    _rawInbound.close();
   }
 }
 

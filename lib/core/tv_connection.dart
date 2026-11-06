@@ -8,6 +8,7 @@ import '../protocol/remote_session.dart';
 import 'device_store.dart';
 import 'pinning.dart';
 import 'tls.dart';
+import 'tv_typing.dart';
 
 enum TvStatus {
   connecting,
@@ -22,7 +23,7 @@ enum TvStatus {
 
 /// Keeps a live remote session to one TV, reconnecting with backoff
 /// (0.1 s → 30 s, like androidtvremote2) until stopped.
-class TvConnection extends ChangeNotifier {
+class TvConnection extends ChangeNotifier implements TypingTarget {
   TvConnection({required SavedTv tv, required this.identity, this.onTvChanged, this.onConnected}) : _current = tv;
 
   final ClientIdentity identity;
@@ -47,11 +48,19 @@ class TvConnection extends ChangeNotifier {
 
   bool get isConnected => _status == TvStatus.connected && _session != null;
   bool get isOn => _session?.isOn ?? false;
+  @override
   String get currentApp => _session?.currentApp ?? '';
   int? get volumeLevel => _session?.volumeLevel;
   int? get volumeMax => _session?.volumeMax;
   bool get muted => _session?.muted ?? false;
   bool get voiceSupported => _session?.voiceSupported ?? false;
+
+  /// A text field is focused on the TV (its keyboard is up).
+  @override
+  bool get textFieldActive => isConnected && (_session?.textFieldActive ?? false);
+
+  /// The focused TV text field's content, as the TV reports it.
+  String get textFieldValue => _session?.textFieldValue ?? '';
 
   void start() {
     if (_active) return;
@@ -79,14 +88,22 @@ class TvConnection extends ChangeNotifier {
     if (w != null && !w.isCompleted) w.complete();
   }
 
+  @override
   void sendKey(int keyCode, [KeyDirection direction = KeyDirection.short]) {
     if (isConnected) _session?.sendKey(keyCode, direction);
   }
 
+  @override
   void sendText(String text) {
     if (isConnected) _session?.sendText(text);
   }
 
+  @override
+  void appendText(int at, String suffix) {
+    if (isConnected) _session?.appendText(at, suffix);
+  }
+
+  @override
   void launchApp(String link) {
     if (isConnected) _session?.launchApp(link);
   }

@@ -7,14 +7,18 @@
 //       Connects, prints TV state, then runs commands:
 //       key:<code>  long:<code>  text:<string>  link:<uri>  wait:<ms>
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:tv_remote/core/certificate.dart';
 import 'package:tv_remote/core/pairing_flow.dart';
 import 'package:tv_remote/core/saved_tv.dart';
 import 'package:tv_remote/core/share_link.dart';
 import 'package:tv_remote/core/tls.dart';
+import 'package:tv_remote/core/tv_typing.dart';
 import 'package:tv_remote/protocol/pairing_crypto.dart';
+import 'package:tv_remote/protocol/proto.dart';
 import 'package:tv_remote/protocol/remote_messages.dart';
 import 'package:tv_remote/protocol/remote_session.dart';
 
@@ -130,6 +134,14 @@ Future<void> main(List<String> args) async {
     'app=${s.currentApp} voice=${s.voiceSupported} features=${s.features} (${s.vendor} ${s.model})',
   );
   // Log what the TV tells us (pings are noise).
+  if (args.contains('--raw-ime')) {
+    s.rawInbound.listen((bytes) {
+      final m = ProtoMessage.decode(bytes);
+      for (final f in [20, 21, 22]) {
+        if (m.has(f)) stdout.writeln('[${ts()}] RAW field $f: ${_dump(m.message(f)!)}');
+      }
+    });
+  }
   s.inbound.listen((m) {
     final line = switch (m) {
       RemoteImeShowRequest(:final value) => 'TV: keyboard shown, field="$value"',
@@ -154,6 +166,7 @@ Future<void> main(List<String> args) async {
     exit(2);
   }
   dump('ready');
+  final typing = TvTyping(_SessionTarget(s, (m) => stdout.writeln('[${ts()}]   $m')));
   for (final cmd in args.skip(4).where((a) => !a.startsWith('--'))) {
     final i = cmd.indexOf(':');
     final (verb, arg) = (cmd.substring(0, i), cmd.substring(i + 1));
@@ -167,6 +180,23 @@ Future<void> main(List<String> args) async {
         s.sendKey(int.parse(arg), KeyDirection.endLong);
       case 'text':
         s.sendText(arg);
+      case 'type':
+        // Simulates the phone keyboard: the field's full content after each keystroke.
+        s.sendText(arg);
+      case 'phone':
+        // The app's keyboard (TvTyping): the field's full content after each keystroke.
+        typing.changed(arg);
+      case 'phone-enter':
+        typing.submit(arg);
+      case 'ime':
+        // ime:<insert>:<start>:<end>:<value>
+        final p = arg.split(':');
+        s.sendImeEdit(
+          insert: int.parse(p[0]),
+          start: int.parse(p[1]),
+          end: int.parse(p[2]),
+          value: p.sublist(3).join(':'),
+        );
       case 'link':
         s.launchApp(arg);
       case 'voice':
@@ -204,4 +234,73 @@ List<int> wavPcm(List<int> wav) {
     p += 8 + size + (size & 1);
   }
   throw const FormatException('no data chunk');
+}
+
+/// Recursive protobuf dump (field numbers only; nested messages shown in braces).
+String _dump(ProtoMessage m, [int depth = 0]) {
+  final parts = <String>[];
+  for (final f in m.fieldNumbers) {
+    for (final v in m.rawValues(f)) {
+      if (v is int) {
+        parts.add('$f:$v');
+      } else if (v is List<int>) {
+        String? asText;
+        try {
+          final t = utf8.decode(v);
+          if (t.runes.every((r) => r >= 32 && r < 0x10000)) asText = t;
+        } on Object {
+          asText = null;
+        }
+        ProtoMessage? nested;
+        if (depth < 4 && v.isNotEmpty) {
+          try {
+            nested = ProtoMessage.decode(Uint8List.fromList(v));
+          } on Object {
+            nested = null;
+          }
+        }
+        parts.add(
+          nested != null && nested.fieldNumbers.isNotEmpty && (asText == null || asText.isEmpty)
+              ? '$f:{${_dump(nested, depth + 1)}}'
+              : '$f:"${asText ?? v}"',
+        );
+      }
+    }
+  }
+  return parts.join(' ');
+}
+
+/// Runs the app's typing logic straight on a session, printing what it sends.
+class _SessionTarget implements TypingTarget {
+  _SessionTarget(this._s, this._log);
+  final RemoteSession _s;
+  final void Function(String) _log;
+
+  @override
+  String get currentApp => _s.currentApp;
+  @override
+  bool get textFieldActive => _s.textFieldActive;
+  @override
+  void sendText(String text) {
+    _log('sendText "$text"');
+    _s.sendText(text);
+  }
+
+  @override
+  void appendText(int at, String suffix) {
+    _log('append "$suffix" at $at');
+    _s.appendText(at, suffix);
+  }
+
+  @override
+  void sendKey(int keyCode) {
+    _log('key $keyCode');
+    _s.sendKey(keyCode);
+  }
+
+  @override
+  void launchApp(String link) {
+    _log('link $link');
+    _s.launchApp(link);
+  }
 }

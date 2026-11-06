@@ -148,18 +148,112 @@ void main() {
       expect(changes, 2);
     });
 
-    test('text uses IME counters from the TV', () async {
-      tv.receive(hex(v.inImeBatchEdit)); // counters 7/8
+    // Focus message as a Panasonic TV sends it when Stremio's search box gets focus
+    // (field 20: app_info{counter, inputType, imeOptions, package}, text_field{counter, value, cursor}).
+    Uint8List focus({required int ime, required int field, required String value, bool box = true}) =>
+        (ProtoWriter()..message(
+              20,
+              ProtoWriter()
+                ..message(
+                  1,
+                  ProtoWriter()
+                    ..varint(1, ime)
+                    ..varint(2, 0x8001)
+                    ..string(12, 'com.stremio.one'),
+                )
+                ..message(
+                  2,
+                  box
+                      ? (ProtoWriter()
+                          ..varint(1, field)
+                          ..string(2, value)
+                          ..varint(3, value.length)
+                          ..varint(4, value.length)
+                          ..varint(5, 1))
+                      : ProtoWriter(),
+                ),
+            ))
+            .toBytes();
+
+    Uint8List focusWithoutBox() =>
+        (ProtoWriter()..message(20, ProtoWriter()..message(1, ProtoWriter()..string(12, 'com.stremio.one')))).toBytes();
+
+    Uint8List echo(int field, String value) =>
+        (ProtoWriter()..message(
+              22,
+              ProtoWriter()..message(
+                2,
+                ProtoWriter()
+                  ..varint(1, field)
+                  ..string(2, value),
+              ),
+            ))
+            .toBytes();
+
+    ProtoMessage lastEdit() => ProtoMessage.decode(tv.sent.last).message(21)!;
+
+    test('edits carry the counters from the latest focus message, not the stale first ones', () async {
+      tv.receive(hex(v.inImeBatchEdit)); // stale counters 7/8 right after connecting
+      tv.receive(focus(ime: 34, field: 97, value: ''));
       await flush();
-      s.sendText('héllo');
-      final edit = ProtoMessage.decode(tv.sent.single).message(21)!;
-      expect((edit.int32(1), edit.int32(2)), (7, 8));
-      expect(edit.messages(3).single.message(2)!.string(3), 'héllo');
+      expect(s.textFieldActive, isTrue);
+      s.sendText('a');
+      expect((lastEdit().int32(1), lastEdit().int32(2)), (34, 97));
     });
 
-    test('empty text clears with a delete key', () {
+    test('an empty batch edit with stale counters does not override the focus counters (Play Store)', () async {
+      // Sent by the TV right after the Play Store search box gets focus (captured on a Panasonic TV).
+      tv.receive(focus(ime: 53, field: 178, value: ''));
+      tv.receive((ProtoWriter()..message(21, ProtoWriter()..varint(1, 1))).toBytes());
+      await flush();
+      s.sendText('s');
+      expect((lastEdit().int32(1), lastEdit().int32(2)), (53, 178));
+    });
+
+    test('each edit replaces the whole TV box instead of appending (the TV inserts at its cursor)', () async {
+      tv.receive(focus(ime: 34, field: 97, value: 'WORLDXY'));
+      await flush();
+      s.sendText('s');
+      var e = lastEdit().messages(3).single;
+      expect((e.int32(1), e.message(2)!.int32(1), e.message(2)!.int32(2), e.message(2)!.string(3)), (1, 0, 7, 's'));
+      s.sendText('st');
+      e = lastEdit().messages(3).single;
+      expect((e.message(2)!.int32(2), e.message(2)!.string(3)), (1, 'st'), reason: 'replaces 0..1 ("s")');
       s.sendText('');
-      expect(toHex(tv.sent.single), toHex(RemoteOut.keyInject(Keys.del, KeyDirection.short)));
+      e = lastEdit().messages(3).single;
+      expect((e.int32(1), e.message(2)!.int32(2), e.message(2)!.string(3)), (0, 2, ''), reason: 'clear = delete 0..2');
+    });
+
+    test('echoes of older keystrokes never roll back newer typing', () async {
+      tv.receive(focus(ime: 1, field: 10, value: ''));
+      await flush();
+      s.sendText('a');
+      s.sendText('ab');
+      s.sendText('abc');
+      tv.receive(echo(11, 'a')); // TV catching up
+      await flush();
+      expect(s.textFieldValue, 'abc');
+      s.sendText('abcd');
+      final e = lastEdit().messages(3).single;
+      expect(e.message(2)!.int32(2), 3, reason: 'replace range uses the latest length, not the echo');
+      tv.receive(echo(12, 'ab'));
+      tv.receive(echo(13, 'abc'));
+      tv.receive(echo(14, 'abcd'));
+      await flush();
+      expect(s.textFieldValue, 'abcd');
+      // A change made on the TV itself is taken over.
+      tv.receive(echo(15, 'abcdX'));
+      await flush();
+      expect(s.textFieldValue, 'abcdX');
+    });
+
+    test('the TV reports its keyboard closing (focus message without a text box)', () async {
+      tv.receive(focus(ime: 34, field: 97, value: 'batman'));
+      await flush();
+      expect((s.textFieldActive, s.textFieldValue), (true, 'batman'));
+      tv.receive(focusWithoutBox());
+      await flush();
+      expect(s.textFieldActive, isFalse);
     });
 
     test('ready fails if the TV hangs up first (e.g. unknown certificate)', () async {

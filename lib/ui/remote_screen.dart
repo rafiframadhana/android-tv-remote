@@ -72,16 +72,20 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final old = _connection;
     _connection = null;
     old?.removeListener(_watchTriedHost);
+    old?.removeListener(_watchTvKeyboard);
     old?.dispose();
     try {
       final identity = await _services.identity.forTv(_tv);
       if (!mounted) return;
-      final c = TvConnection(
-        tv: host == null ? _tv : _tv.copyWith(host: host),
-        identity: identity,
-        onTvChanged: _save,
-        onConnected: _save,
-      )..addListener(_watchTriedHost);
+      final c =
+          TvConnection(
+              tv: host == null ? _tv : _tv.copyWith(host: host),
+              identity: identity,
+              onTvChanged: _save,
+              onConnected: _save,
+            )
+            ..addListener(_watchTriedHost)
+            ..addListener(_watchTvKeyboard);
       c.start();
       setState(() {
         _connection = c;
@@ -136,6 +140,36 @@ class _RemoteScreenState extends State<RemoteScreen> {
     if (found == null || found.host == _tv.host || _rejectedHosts.contains(found.host)) return;
     _tryingHost = found.host;
     _connect(host: found.host);
+  }
+
+  /// A keyboard sheet is showing (opened by the user or by a TV text box).
+  bool _keyboardOpen = false;
+  bool _tvFieldWasActive = false;
+
+  /// Live keyboard: when a text box opens on the TV, open the phone keyboard on it.
+  void _watchTvKeyboard() {
+    final c = _connection;
+    if (c == null) return;
+    final active = c.textFieldActive;
+    final opened = active && !_tvFieldWasActive;
+    _tvFieldWasActive = active;
+    if (!opened || _keyboardOpen || _pairingOpen) return;
+    // Wait a moment: leaving a screen can report "box open" and "box closed" back to back.
+    Future<void>.delayed(const Duration(milliseconds: 400), () {
+      if (mounted && identical(c, _connection) && !_keyboardOpen && !_pairingOpen && c.textFieldActive) {
+        _openKeyboard(c, auto: true);
+      }
+    });
+  }
+
+  Future<void> _openKeyboard(TvConnection c, {bool auto = false}) async {
+    if (_keyboardOpen) return;
+    _keyboardOpen = true;
+    try {
+      await showKeyboardSheet(context, c, auto: auto);
+    } finally {
+      _keyboardOpen = false;
+    }
   }
 
   /// Whether the pairing sheet already opened by itself during this visit.
@@ -196,6 +230,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _services.discovery.removeListener(_followIpChange);
     _voice.dispose();
     _connection?.removeListener(_watchTriedHost);
+    _connection?.removeListener(_watchTvKeyboard);
     _connection?.dispose();
     super.dispose();
   }
@@ -306,7 +341,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       _ActionKey(
         label: 'Keyboard',
         icon: Icons.keyboard_outlined,
-        onTap: c.isConnected ? () => showKeyboardSheet(context, c) : null,
+        onTap: c.isConnected ? () => _openKeyboard(c) : null,
       ),
       _ActionKey(
         label: 'More keys',

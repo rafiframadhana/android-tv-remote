@@ -116,6 +116,12 @@ class ProtoMessage {
 
   bool has(int field) => _fields.containsKey(field);
 
+  /// Field numbers present, in first-seen order (diagnostics).
+  Iterable<int> get fieldNumbers => _fields.keys;
+
+  /// All raw values of a field: ints for varints, bytes for length-delimited (diagnostics).
+  List<Object> rawValues(int field) => List.unmodifiable(_fields[field] ?? const []);
+
   /// Last varint value of [field] as a signed 32-bit int (int32/enum/bool semantics), 0 if absent.
   int int32(int field) {
     final v = _fields[field]?.whereType<int>().lastOrNull;

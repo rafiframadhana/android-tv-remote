@@ -75,29 +75,34 @@ abstract final class RemoteOut {
       ..varint(2, direction.wire),
   );
 
-  /// Replaces the focused TV text field's content with [text].
-  /// Mirrors androidtvremote2: start = end = text length - 1 (cursor at the end).
-  static Uint8List imeText({required int imeCounter, required int fieldCounter, required String text}) {
-    final cursor = text.length - 1;
-    return _wrap(
-      _F.imeBatchEdit,
-      ProtoWriter()
-        ..varint(1, imeCounter)
-        ..varint(2, fieldCounter)
-        ..message(
-          3,
-          ProtoWriter()
-            ..varint(1, 1)
-            ..message(
-              2,
-              ProtoWriter()
-                ..varint(1, cursor)
-                ..varint(2, cursor)
-                ..string(3, text),
-            ),
-        ),
-    );
-  }
+  /// One IME edit on the TV's focused text field: the TV replaces [start]..[end] with [value]
+  /// (insert = 1), or deletes that range (insert = 0). The counters must be the TV's current ones
+  /// or it ignores the edit.
+  static Uint8List imeEdit({
+    required int imeCounter,
+    required int fieldCounter,
+    required int insert,
+    required int start,
+    required int end,
+    required String value,
+  }) => _wrap(
+    _F.imeBatchEdit,
+    ProtoWriter()
+      ..varint(1, imeCounter)
+      ..varint(2, fieldCounter)
+      ..message(
+        3,
+        ProtoWriter()
+          ..varint(1, insert)
+          ..message(
+            2,
+            ProtoWriter()
+              ..varint(1, start)
+              ..varint(2, end)
+              ..string(3, value),
+          ),
+      ),
+  );
 
   static Uint8List appLink(String link) => _wrap(_F.appLinkLaunch, ProtoWriter()..string(1, link));
 
@@ -136,14 +141,26 @@ sealed class RemoteIn {
     }
     if (m.message(_F.imeKeyInject) case final k?) {
       final app = k.message(1);
-      return RemoteImeKeyInject(appPackage: app?.string(12) ?? '', label: app?.string(10) ?? '');
+      final field = k.message(2);
+      return RemoteImeKeyInject(
+        appPackage: app?.string(12) ?? '',
+        label: app?.string(10) ?? '',
+        imeCounter: app?.has(1) ?? false ? app!.int32(1) : null,
+        fieldCounter: field?.has(1) ?? false ? field!.int32(1) : null,
+        fieldText: field?.string(2) ?? '',
+        hasTextField: field != null,
+      );
     }
     if (m.message(_F.imeBatchEdit) case final b?) {
       final edit = b.messages(3).firstOrNull?.message(2);
-      return RemoteImeBatchEdit(imeCounter: b.int32(1), fieldCounter: b.int32(2), text: edit?.string(3) ?? '');
+      return RemoteImeBatchEdit(imeCounter: b.int32(1), fieldCounter: b.int32(2), text: edit?.string(3));
     }
     if (m.message(_F.imeShowRequest) case final s?) {
-      return RemoteImeShowRequest(s.message(2)?.string(2) ?? '');
+      final field = s.message(2);
+      return RemoteImeShowRequest(
+        field?.string(2) ?? '',
+        fieldCounter: field?.has(1) ?? false ? field!.int32(1) : null,
+      );
     }
     if (m.message(_F.voiceBegin) case final v?) return RemoteVoiceBegin(v.int32(1));
     if (m.has(_F.error)) return const RemoteError();
@@ -180,23 +197,44 @@ class RemoteVolume extends RemoteIn {
   final bool muted;
 }
 
+/// The TV's keyboard focus changed (sent when an app or a text field gets focus).
+///
+/// Verified on a Panasonic Android TV with Stremio: app_info.counter (field 1) is the input
+/// counter and text_field_status.counter_field (field 1) the field counter that edits must carry —
+/// edits with stale counters are dropped ("Ignoring edit, the input field has changed from 1 to 33").
 class RemoteImeKeyInject extends RemoteIn {
-  const RemoteImeKeyInject({required this.appPackage, required this.label});
+  const RemoteImeKeyInject({
+    required this.appPackage,
+    required this.label,
+    this.imeCounter,
+    this.fieldCounter,
+    this.fieldText = '',
+    this.hasTextField = false,
+  });
+  final int? imeCounter;
+  final int? fieldCounter;
+
+  /// Current content of the focused text field.
+  final String fieldText;
+
+  /// A text field is focused on the TV (the TV's keyboard is up).
+  final bool hasTextField;
   final String appPackage;
   final String label;
 }
 
 class RemoteImeBatchEdit extends RemoteIn {
-  const RemoteImeBatchEdit({required this.imeCounter, required this.fieldCounter, this.text = ''});
+  const RemoteImeBatchEdit({required this.imeCounter, required this.fieldCounter, this.text});
   final int imeCounter;
   final int fieldCounter;
 
-  /// Current content of the TV's focused text field, as reported by the TV.
-  final String text;
+  /// Current content of the TV's focused text field, or null when the message carries no edit.
+  final String? text;
 }
 
 class RemoteImeShowRequest extends RemoteIn {
-  const RemoteImeShowRequest(this.value);
+  const RemoteImeShowRequest(this.value, {this.fieldCounter});
+  final int? fieldCounter;
   final String value;
 }
 
